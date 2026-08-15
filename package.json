@@ -1,6 +1,6 @@
 {
   "name": "im-notify-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "飞书 / 企业微信群机器人通知的发送层：业务码校验、重试、超时、告警去重、卡片构建器。零依赖，跨 Node / Cloudflare Workers / Deno。Send layer for Feishu (Lark) & WeCom bot webhooks — biz-code aware, retrying, timeout-guarded, with alert dedupe.",
   "type": "module",
   "license": "MIT",
