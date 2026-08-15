@@ -149,6 +149,32 @@ await apiAlert(targets, info, { dedupe: { key: `alert:${route}:${status}`, store
 - `shouldSend` **查询失败时应返回 `true`**。宁可多推一条，也不要因为存储抖动就静默丢掉告警。
 - 只有**发送成功**才会调 `markSent`。失败也打标记的话，一次失败就把整个窗口期堵死了。
 
+## 在 Cloudflare Pages Functions 里用（有个坑）
+
+`wrangler pages deploy` 会 bundle `functions/` 目录，里面的 `import ... from 'im-notify-kit'`
+要靠 `node_modules` 解析。如果你的 CI 把「构建」和「部署」拆成两个 job，而部署 job 只继承了
+`dist/` 产物、没装依赖，部署会失败：
+
+```
+✘ [ERROR] Could not resolve "im-notify-kit"
+```
+
+修法是在部署 job 里补一步装依赖：
+
+```yaml
+deploy:
+  needs: [build]
+  script:
+    - npm ci --ignore-scripts   # ← 少了这行就 Could not resolve
+    - npx wrangler pages deploy dist --project-name=xxx --branch=main
+```
+
+值得警惕的是这个失败的形态：typecheck、build 全绿，只有 deploy 红，线上还跑着旧版本、
+表现完全正常。很容易被当成偶发的部署抖动，实际是那之后的提交全都没上线。
+
+另外，本地跑 `npx wrangler pages functions build` 验证会**通过**——因为本地有
+`node_modules`。本地环境比 CI 多点东西的验证是假验证，别拿它当数。
+
 ## 这个包不做什么
 
 只做发送。读配置、写推送日志、存去重状态一律不碰——那些每个项目的存储都不一样（Supabase / KV / D1 / 内存），塞进来只会逼调用方迁就包的口味。需要持久化的地方走依赖注入（`DedupeStore`）。
