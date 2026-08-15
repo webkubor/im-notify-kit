@@ -194,8 +194,47 @@ describe('apiAlert', () => {
   })
 })
 
-describe('企微降级渲染', () => {
-  it('标题变首行加粗，按钮变链接行 —— 降级但不丢信息', () => {
+describe('企微卡片', () => {
+  it('默认发 template_card 而不是纯 markdown —— 企微也要可交互卡片', async () => {
+    const { fn, calls } = mockFetch([{ status: 200, body: { errcode: 0 } }])
+    await wecom.card(WECOM_HOOK, {
+      title: '接口异常',
+      markdown: '**接口**：`POST /api/x`\n**状态**：HTTP 500\n附加说明一行',
+      buttons: [{ text: '看日志', url: 'https://example.com/logs' }],
+    }, { fetchImpl: fn })
+
+    const p = calls[0]!.payload as {
+      msgtype: string
+      template_card: {
+        main_title: { title: string }
+        sub_title_text?: string
+        horizontal_content_list?: Array<{ keyname: string; value: string }>
+        jump_list?: Array<{ type: number; url: string; title: string }>
+        card_action: { type: number; url: string }
+      }
+    }
+    expect(p.msgtype).toBe('template_card')
+    expect(p.template_card.main_title.title).toBe('接口异常')
+    // 「**键**：值」抽成键值区，反引号被清掉（企微键值区不渲染 markdown）
+    expect(p.template_card.horizontal_content_list).toEqual([
+      { keyname: '接口', value: 'POST /api/x' },
+      { keyname: '状态', value: 'HTTP 500' },
+    ])
+    // 抽不出键值的行不丢，留在副标题
+    expect(p.template_card.sub_title_text).toContain('附加说明一行')
+    expect(p.template_card.jump_list?.[0]).toEqual({ type: 1, url: 'https://example.com/logs', title: '看日志' })
+    // card_action 是企微必填
+    expect(p.template_card.card_action.url).toBe('https://example.com/logs')
+  })
+
+  it('没有按钮时 card_action 仍然有值 —— 缺了企微会拒收', async () => {
+    const { fn, calls } = mockFetch([{ status: 200, body: { errcode: 0 } }])
+    await wecom.card(WECOM_HOOK, { title: 'T', markdown: '正文' }, { fetchImpl: fn })
+    const p = calls[0]!.payload as { template_card: { card_action?: { url: string } } }
+    expect(p.template_card.card_action?.url).toBeTruthy()
+  })
+
+  it('renderMarkdown 仍可用于纯文本场景：标题变加粗、按钮变链接行', () => {
     const md = renderMarkdown({
       title: '接口异常',
       markdown: '状态：500',

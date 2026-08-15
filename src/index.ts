@@ -7,7 +7,7 @@ export { feishu, wecom }
 export { postWebhook } from './send.js'
 export { memoryStore, DEFAULT_WINDOW_MS } from './dedupe.js'
 export { buildCard } from './feishu.js'
-export { renderMarkdown } from './wecom.js'
+export { renderMarkdown, buildTemplateCard } from './wecom.js'
 
 /**
  * 把同一条消息发到多个目标，一次拿回全部结果。

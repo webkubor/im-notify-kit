@@ -36,7 +36,11 @@ if (!r.ok) console.error(r.error, r.code, r.response)
 
 ### 一条消息发多个平台
 
-同一份内容，飞书渲染成卡片，企微渲染成 markdown（标题降级为首行加粗，按钮降级为链接行——降级但不丢信息）。
+同一份内容，**两边都是可交互卡片**：飞书渲染成 `interactive` 卡片，企微渲染成 `template_card`（主标题 + 键值区 + 跳转按钮）。
+
+两家的卡片结构完全不同——飞书是 `{msg_type:'interactive', card:{header, elements}}`，企微是 `{msgtype:'template_card', template_card:{card_type, main_title, ...}}`。把飞书那份 JSON POST 给企微 webhook，企微会回 HTTP 200 + `errcode` 非 0，消息进不去群。这个包按 platform 分别渲染，所以你写一份内容就行。
+
+正文里 `**键**：值` 形式的行会自动抽成企微卡片的键值区（告警消息本来就是这个形状），抽不出来的行留在副标题，不丢内容。
 
 ```ts
 import { notify } from 'im-notify-kit'
@@ -88,8 +92,10 @@ await apiAlert(
 | `feishu.buildCard(msg)` | 只拿卡片 payload（要走开放平台 API 而非群机器人时用） |
 | `wecom.text(url, content, opts?)` | 企微纯文本 |
 | `wecom.markdown(url, content, opts?)` | 企微 markdown |
-| `wecom.card(url, msg, opts?)` | 用平台中立消息发企微 |
-| `wecom.renderMarkdown(msg)` | 只拿降级后的 markdown 文本 |
+| `wecom.templateCard(url, msg, opts?)` | 企微模板卡片（可交互，带键值区和跳转） |
+| `wecom.card(url, msg, opts?)` | 用平台中立消息发企微，默认走模板卡片 |
+| `wecom.buildTemplateCard(msg, fallbackUrl?)` | 只拿企微卡片 payload |
+| `wecom.renderMarkdown(msg)` | 只拿 markdown 文本（需要纯文本渲染时用） |
 | `notify(targets, msg, opts?)` | 一条消息发多个目标 |
 | `apiAlert(targets, info, opts?)` | 接口 5xx 告警 |
 | `postWebhook(platform, url, payload, opts?)` | 底层出口，自定义 payload 时用 |

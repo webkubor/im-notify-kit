@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v0.2.0
+
+企微不再降级成纯 markdown —— 和飞书一样发**可交互卡片**。
+
+- 新增 `wecom.templateCard()` / `wecom.buildTemplateCard()`：企微 `template_card`（text_notice），
+  主标题 + 键值区 + 跳转按钮
+- `wecom.card()` 与 `notify()` 对企微目标默认改走模板卡片（v0.1.0 是 markdown 降级）
+- 正文里 `**键**：值` 的行自动抽成企微键值区，反引号等 markdown 标记清掉（企微键值区不渲染
+  markdown，留着会原样显示）；抽不出的行进副标题，不丢内容
+- `card_action` 始终有值 —— 企微必填，缺了整条消息被拒收
+
+`wecom.renderMarkdown()` 保留，需要纯文本渲染时显式调用。
+
 ## v0.1.0
 
 首个版本。从好易美后台（hym-admin）和牧之猫砂后台（mzmeso-manager）里重复了两遍的
