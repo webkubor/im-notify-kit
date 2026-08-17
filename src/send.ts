@@ -12,11 +12,15 @@ const DEFAULT_RETRY_BASE_MS = 500
  * 「触发群安全设置」「关键词不匹配」这些情况下**照样返回 HTTP 200**，
  * 失败信息藏在 body.code / body.errcode 里。只判断 res.ok 的代码会把这些
  * 当成推送成功——于是告警静默失效：没人收到，也没人知道没收到。
+ *
+ * 注意：飞书应用 API（feishu-app）也用 `code` 字段，与 webhook 同源。
+ * 所以读 code 时把 feishu 和 feishu-app 一起算。
  */
 function readBizCode(platform: Platform, body: unknown): number | undefined {
   if (!body || typeof body !== 'object') return undefined
   const o = body as Record<string, unknown>
-  const raw = platform === 'feishu' ? o.code : o.errcode
+  const isFeishu = platform === 'feishu' || platform === 'feishu-app'
+  const raw = isFeishu ? o.code : o.errcode
   return typeof raw === 'number' ? raw : undefined
 }
 
@@ -28,10 +32,11 @@ function readBizCode(platform: Platform, body: unknown): number | undefined {
  * 徒增延迟还把日志刷满。
  */
 function isRetryable(platform: Platform, httpStatus: number, code: number | undefined): boolean {
+  const isFeishu = platform === 'feishu' || platform === 'feishu-app'
   if (httpStatus === 0) return true            // 网络层异常 / 超时
   if (httpStatus >= 500) return true           // 对面炸了
   if (httpStatus === 429) return true          // 被限流
-  if (platform === 'feishu' && code === 9499) return true   // 飞书频控
+  if (isFeishu && code === 9499) return true   // 飞书频控（webhook + 应用 API 共用）
   if (platform === 'wecom' && code === 45009) return true   // 企微接口调用超限
   return false
 }

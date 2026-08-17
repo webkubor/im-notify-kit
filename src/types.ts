@@ -6,8 +6,10 @@
  * 迁就包的口味。需要持久化的地方一律走依赖注入（见 DedupeStore）。
  */
 
-/** 支持的 IM 平台 */
-export type Platform = 'feishu' | 'wecom'
+/** 支持的 IM 平台。
+ *  - `feishu` / `wecom`：群机器人 webhook（无 access_token，单向推送，URL 是群机器人 token 路径）。
+ *  - `feishu-app`：飞书开放平台 im/v1/messages（需要 access_token + receive_id，可私聊可群发）。*/
+export type Platform = 'feishu' | 'wecom' | 'feishu-app'
 
 /** 一次发送的结果。永远返回结果对象，不靠抛异常表达「没发成功」。 */
 export interface SendResult {
@@ -96,15 +98,23 @@ export interface NotifyMessage {
   template?: CardTemplate
   /** 底部按钮，只对飞书卡片生效（企微 markdown 不支持按钮，会降级成正文里的链接行） */
   buttons?: CardButton[]
+  /** 纯文本（feishu-app 纯文本消息用，与 markdown 二选一；markdown 优先） */
+  text?: string
 }
 
 /** 一个推送目标 */
 export interface Target {
   platform: Platform
-  /** 群机器人的 webhook 地址 */
-  url: string
+  /** 群机器人的 webhook 地址（feishu/wecom）；feishu-app 不需要 */
+  url?: string
   /** 可选的目标名，只用于结果标注和排查，例如群名 */
   name?: string
+  /** feishu-app 必需：飞书 tenant_access_token（调用方自管 / 缓存） */
+  appAccessToken?: string
+  /** feishu-app 必需：open_id / chat_id / email 等 */
+  appReceiveId?: string
+  /** feishu-app 必需：open_id / chat_id / email / union_id，详见飞书 receive_id_type 枚举 */
+  appReceiveIdType?: 'open_id' | 'chat_id' | 'email' | 'union_id'
 }
 
 /** 多目标发送的单条结果 */
