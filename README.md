@@ -1,5 +1,11 @@
 # im-notify-kit
 
+[![npm version](https://img.shields.io/npm/v/im-notify-kit.svg)](https://www.npmjs.com/package/im-notify-kit)
+[![npm downloads](https://img.shields.io/npm/dw/im-notify-kit.svg)](https://www.npmjs.com/package/im-notify-kit)
+[![license](https://img.shields.io/npm/l/im-notify-kit.svg)](./LICENSE)
+[![TypeScript types](https://img.shields.io/badge/types-included-blue)](https://www.typescriptlang.org)
+[![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)](https://www.npmjs.com/package/im-notify-kit?activeTab=code)
+
 飞书（Lark）/ 企业微信群机器人通知的**发送层**。零依赖，跨 Node / Cloudflare Workers / Deno。
 
 ```bash
@@ -58,6 +64,47 @@ results.filter(r => !r.ok).forEach(r => console.error(r.target.name, r.error))
 
 并发发送，**永不抛异常**——单个目标失败不影响其它目标，你拿到的是一份完整战报。
 
+### 给 owner 私聊告警（feishu-app）
+
+飞书群机器人 webhook 只能往群里推，私聊（或者按用户身份发业务消息）走开放平台
+`im/v1/messages`：需要 `tenant_access_token` 和接收方 `open_id` / `email` / `union_id`（群聊用 `chat_id`）。
+token 的获取和缓存由调用方自己管——这个包不碰应用凭据，只负责把消息发出去。
+
+```ts
+import { notify, feishuApp } from 'im-notify-kit'
+
+// 单发一条私聊
+await feishuApp.card(ACCESS_TOKEN, 'ou_owner', {
+  title: '缪斯报错',
+  markdown: '**trace_id**: `muse-abc-123`',
+  template: 'red',
+}, 'open_id')
+
+// 混通道：群 webhook + owner 私聊一起发
+await notify(
+  [
+    { platform: 'feishu', url: FEISHU_HOOK, name: '群' },
+    {
+      platform: 'feishu-app',
+      appAccessToken: ACCESS_TOKEN,
+      appReceiveId: 'ou_owner',
+      appReceiveIdType: 'open_id',
+      name: 'owner 私聊',
+    },
+  ],
+  { title: '磁盘告警', markdown: '**使用率**：92%', template: 'red' },
+)
+
+// 只想发纯文本（不渲染卡片）：消息里给 text 而不是 markdown
+await notify(
+  [{ platform: 'feishu-app', appAccessToken: ACCESS_TOKEN, appReceiveId: 'ou_owner' }],
+  { text: '磁盘占用 92%' },
+)
+```
+
+`markdown` 与 `text` 二选一：`markdown` 渲染成卡片，`text` 发纯文本（webhook 通道收到
+text-only 消息时降级成卡片正文，不丢内容）。两者都不给会在 `notify()` 里直接返回失败结果。
+
 ### 接口 5xx 告警
 
 ```ts
@@ -90,6 +137,8 @@ await apiAlert(
 | `feishu.text(url, content, opts?)` | 飞书纯文本 |
 | `feishu.card(url, msg, opts?)` | 飞书交互卡片 |
 | `feishu.buildCard(msg)` | 只拿卡片 payload（要走开放平台 API 而非群机器人时用） |
+| `feishuApp.text(token, receiveId, content, receiveIdType?, opts?)` | 飞书应用消息纯文本（私聊/群发） |
+| `feishuApp.card(token, receiveId, msg, receiveIdType?, opts?)` | 飞书应用消息交互卡片 |
 | `wecom.text(url, content, opts?)` | 企微纯文本 |
 | `wecom.markdown(url, content, opts?)` | 企微 markdown |
 | `wecom.templateCard(url, msg, opts?)` | 企微模板卡片（可交互，带键值区和跳转） |
@@ -98,7 +147,14 @@ await apiAlert(
 | `wecom.renderMarkdown(msg)` | 只拿 markdown 文本（需要纯文本渲染时用） |
 | `notify(targets, msg, opts?)` | 一条消息发多个目标 |
 | `apiAlert(targets, info, opts?)` | 接口 5xx 告警 |
-| `postWebhook(platform, url, payload, opts?)` | 底层出口，自定义 payload 时用 |
+| `sendPayload(platform, url, payload, opts?)` | 底层出口，自定义 payload 时用（旧名 `postWebhook`，已弃用） |
+
+### Target
+
+`Target` 是判别联合，按平台收窄字段，写错类型直接编译报错：
+
+- **webhook 目标**（`feishu` / `wecom`）：`{ platform, url, name? }` —— `url` 必填
+- **feishu-app 目标**：`{ platform: 'feishu-app', appAccessToken, appReceiveId, appReceiveIdType?, name? }` —— 凭据字段必填
 
 ### SendOptions
 
