@@ -6,10 +6,15 @@
  * 迁就包的口味。需要持久化的地方一律走依赖注入（见 DedupeStore）。
  */
 
-/** 支持的 IM 平台。
- *  - `feishu` / `wecom`：群机器人 webhook（无 access_token，单向推送，URL 是群机器人 token 路径）。
- *  - `feishu-app`：飞书开放平台 im/v1/messages（需要 access_token + receive_id，可私聊可群发）。*/
+/**
+ * 支持的 IM 平台。
+ * - `feishu` / `wecom`：群机器人 webhook（无 access_token，单向推送，URL 是群机器人 token 路径）。
+ * - `feishu-app`：飞书开放平台 im/v1/messages（需要 access_token + receive_id，可私聊可群发）。
+ */
 export type Platform = 'feishu' | 'wecom' | 'feishu-app'
+
+/** 飞书开放平台消息接收方类型（receive_id_type 枚举） */
+export type FeishuAppReceiveIdType = 'open_id' | 'chat_id' | 'email' | 'union_id'
 
 /** 一次发送的结果。永远返回结果对象，不靠抛异常表达「没发成功」。 */
 export interface SendResult {
@@ -88,34 +93,52 @@ export interface CardButton {
   type?: 'default' | 'primary' | 'danger'
 }
 
-/** 平台中立的消息描述——同一份内容能渲染成飞书卡片，也能渲染成企微 markdown */
-export interface NotifyMessage {
+/** 平台中立消息的公共字段 */
+export interface NotifyMessageBase {
   /** 标题。飞书渲染成卡片头，企微拼成 markdown 首行加粗。 */
   title?: string
-  /** 正文，markdown 语法 */
-  markdown: string
   /** 主题色，只对飞书卡片生效 */
   template?: CardTemplate
   /** 底部按钮，只对飞书卡片生效（企微 markdown 不支持按钮，会降级成正文里的链接行） */
   buttons?: CardButton[]
-  /** 纯文本（feishu-app 纯文本消息用，与 markdown 二选一；markdown 优先） */
-  text?: string
 }
 
-/** 一个推送目标 */
-export interface Target {
-  platform: Platform
-  /** 群机器人的 webhook 地址（feishu/wecom）；feishu-app 不需要 */
-  url?: string
+/**
+ * 平台中立的消息描述——同一份内容能渲染成飞书卡片，也能渲染成企微 markdown。
+ *
+ * `markdown` 与 `text` 二选一：
+ * - `markdown`：渲染成卡片（飞书 interactive / 企微 template_card），多数场景用这个；
+ * - `text`：纯文本（feishu-app 发 text 消息；webhook 通道收到时降级为卡片正文）。
+ */
+export type NotifyMessage = NotifyMessageBase & (
+  | { markdown: string; text?: never }
+  | { text: string; markdown?: never }
+)
+
+/** 群机器人 webhook 目标（feishu / wecom） */
+export interface WebhookTarget {
+  platform: 'feishu' | 'wecom'
+  /** 群机器人的 webhook 地址 */
+  url: string
   /** 可选的目标名，只用于结果标注和排查，例如群名 */
   name?: string
-  /** feishu-app 必需：飞书 tenant_access_token（调用方自管 / 缓存） */
-  appAccessToken?: string
-  /** feishu-app 必需：open_id / chat_id / email 等 */
-  appReceiveId?: string
-  /** feishu-app 必需：open_id / chat_id / email / union_id，详见飞书 receive_id_type 枚举 */
-  appReceiveIdType?: 'open_id' | 'chat_id' | 'email' | 'union_id'
 }
+
+/** 飞书开放平台应用消息目标（im/v1/messages，需要应用凭据，可私聊可群发） */
+export interface FeishuAppTarget {
+  platform: 'feishu-app'
+  /** 飞书 tenant_access_token（调用方自管 / 缓存） */
+  appAccessToken: string
+  /** 接收方：open_id / chat_id / email / union_id，配合 appReceiveIdType */
+  appReceiveId: string
+  /** 接收方类型，默认 open_id */
+  appReceiveIdType?: FeishuAppReceiveIdType
+  /** 可选的目标名，只用于结果标注和排查，例如「owner 私聊」 */
+  name?: string
+}
+
+/** 一个推送目标。webhook 目标 url 必填；feishu-app 目标凭据字段必填。 */
+export type Target = WebhookTarget | FeishuAppTarget
 
 /** 多目标发送的单条结果 */
 export interface FanoutResult extends SendResult {

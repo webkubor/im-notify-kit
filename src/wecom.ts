@@ -1,14 +1,14 @@
 import type { NotifyMessage, SendOptions, SendResult } from './types.js'
-import { postWebhook } from './send.js'
+import { sendPayload } from './send.js'
 
 /** 纯文本消息 */
 export function text(url: string, content: string, options?: SendOptions): Promise<SendResult> {
-  return postWebhook('wecom', url, { msgtype: 'text', text: { content } }, options)
+  return sendPayload('wecom', url, { msgtype: 'text', text: { content } }, options)
 }
 
 /** markdown 消息 */
 export function markdown(url: string, content: string, options?: SendOptions): Promise<SendResult> {
-  return postWebhook('wecom', url, { msgtype: 'markdown', markdown: { content } }, options)
+  return sendPayload('wecom', url, { msgtype: 'markdown', markdown: { content } }, options)
 }
 
 /**
@@ -22,7 +22,7 @@ export function markdown(url: string, content: string, options?: SendOptions): P
 export function renderMarkdown(msg: NotifyMessage): string {
   const parts: string[] = []
   if (msg.title) parts.push(`**${msg.title}**`)
-  parts.push(msg.markdown)
+  parts.push(msg.markdown ?? msg.text ?? '')
   if (msg.buttons?.length) {
     parts.push(msg.buttons.map((b) => `[${b.text}](${b.url})`).join(' · '))
   }
@@ -57,30 +57,48 @@ function splitKeyValueLines(markdown: string): {
   return { pairs, rest }
 }
 
+/** 企微模板卡片本体（card_type: text_notice） */
+export interface WecomTemplateCard {
+  card_type: 'text_notice'
+  main_title: { title: string }
+  sub_title_text?: string
+  horizontal_content_list?: Array<{ keyname: string; value: string }>
+  jump_list?: Array<{ type: 1; url: string; title: string }>
+  card_action: { type: 1; url: string }
+}
+
+/** 企微模板卡片 payload */
+export interface WecomTemplateCardPayload {
+  msgtype: 'template_card'
+  template_card: WecomTemplateCard
+}
+
+/** 没有可用跳转地址时的整卡兜底：type:1 + 空 url 会被企微拒收，必须给个真实地址 */
+const FALLBACK_CARD_ACTION_URL = 'https://work.weixin.qq.com'
+
 /**
  * 构造企微模板卡片 payload（card_type: text_notice）。
  *
  * 单独导出的理由同飞书的 buildCard：有人要拿 payload 走别的通道，不该逼他重拼。
  *
- * 注意 card_action 是企微的**必填字段**——整卡点击行为。没有按钮时用第一个链接，
- * 一个都没有就退化成不可跳转的静态卡片（type:1 + 空 url 会被企微拒收，所以此时
- * 直接省掉 jump_list，card_action 指向一个占位的锚点由调用方给，见 fallbackUrl）。
+ * 注意 card_action 是企微的**必填字段**——整卡点击行为。没有按钮时用第一个链接
+ * （或调用方给的 fallbackUrl），一个都没有就指向企微官网占位，保证卡片能过审。
  */
-export function buildTemplateCard(msg: NotifyMessage, fallbackUrl?: string): Record<string, unknown> {
-  const { pairs, rest } = splitKeyValueLines(msg.markdown)
+export function buildTemplateCard(msg: NotifyMessage, fallbackUrl?: string): WecomTemplateCardPayload {
+  const { pairs, rest } = splitKeyValueLines(msg.markdown ?? msg.text ?? '')
   const jumpUrl = msg.buttons?.[0]?.url ?? fallbackUrl
 
-  const card: Record<string, unknown> = {
+  const card: WecomTemplateCard = {
     card_type: 'text_notice',
     main_title: { title: msg.title ?? '通知' },
+    // card_action 必填：有跳转地址就整卡可点，没有就只能给个占位地址
+    card_action: jumpUrl ? { type: 1, url: jumpUrl } : { type: 1, url: FALLBACK_CARD_ACTION_URL },
   }
   if (rest.length) card.sub_title_text = rest.join('\n').slice(0, 400)
   if (pairs.length) card.horizontal_content_list = pairs
   if (msg.buttons?.length) {
     card.jump_list = msg.buttons.slice(0, 3).map((b) => ({ type: 1, url: b.url, title: b.text }))
   }
-  // card_action 必填：有跳转地址就整卡可点，没有就只能给个不跳转的类型
-  card.card_action = jumpUrl ? { type: 1, url: jumpUrl } : { type: 1, url: 'https://work.weixin.qq.com' }
 
   return { msgtype: 'template_card', template_card: card }
 }
@@ -91,7 +109,7 @@ export function templateCard(
   msg: NotifyMessage,
   options?: SendOptions & { fallbackUrl?: string },
 ): Promise<SendResult> {
-  return postWebhook('wecom', url, buildTemplateCard(msg, options?.fallbackUrl), options)
+  return sendPayload('wecom', url, buildTemplateCard(msg, options?.fallbackUrl), options)
 }
 
 /**

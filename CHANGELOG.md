@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## v0.4.0
+修复 feishu-app 鉴权漏洞 + 类型收紧 + 代码清理。
+
+**修复（来自 Codex Review，v0.3.0 合并后未处理）**
+
+- **P1 鉴权 bug**：`feishuApp.text/card` 注入 `fetchImpl`（测试 / 特殊运行时）时
+  `Authorization` 头会被整个跳过——现在鉴权包在**最终选定的 fetch 外面**，注入的
+  fetchImpl 也一样带 `Bearer` 头，并有回归测试锁住
+- **Target 判别联合**：`url` 恢复为 webhook 目标**必填**，feishu-app 目标要求
+  `appAccessToken` / `appReceiveId` 必填——`{ platform: 'feishu' }` 这种缺 url 的对象
+  现在直接编译报错，不再能静默通过
+- **NotifyMessage 二选一**：`markdown` 与 `text` 改成类型层互斥——
+  `{ text: '...' }` 可以直接传给 `notify()`，不再需要塞空 `markdown` 绕
+- `notify()` 空消息（markdown / text 都没有）运行时兜底：直接返回失败结果，不发请求
+
+**清理**
+
+- `postWebhook` 改名 `sendPayload`（它现在也服务飞书开放平台 API，不再是纯 webhook
+  出口）；旧名保留为 deprecated 别名
+- `buildCard` / `buildTemplateCard` 返回类型化 payload（`FeishuCardPayload` /
+  `WecomTemplateCardPayload`），告别 `Record<string, unknown>`
+- `notify()` 分发改 `switch`，去掉非空断言；失败结果统一走 `failResult()` 辅助
+- text-only 消息在 webhook 通道降级为卡片正文（`markdown ?? text`），不丢内容
+- 测试补 Authorization 头断言（原测试名声称断言了但实际没有）、抓请求 helper，
+  去掉 `any`
+
 ## v0.3.0
 
 新增 **feishu-app** 通道：飞书开放平台 `im/v1/messages` 应用消息，适用场景是

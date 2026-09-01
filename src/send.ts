@@ -5,6 +5,16 @@ const DEFAULT_TIMEOUT_MS = 10_000
 const DEFAULT_RETRIES = 2
 const DEFAULT_RETRY_BASE_MS = 500
 
+/** 飞书体系平台（webhook 与应用 API 同源：业务码都在 body.code，频控码都是 9499） */
+function isFeishuPlatform(platform: Platform): boolean {
+  return platform === 'feishu' || platform === 'feishu-app'
+}
+
+/** 构造失败结果。本包约定：失败不抛异常，一律返回结果对象。 */
+export function failResult(error: string, extra: Partial<SendResult> = {}): SendResult {
+  return { ok: false, httpStatus: 0, response: '', attempts: 0, error, ...extra }
+}
+
 /**
  * 平台业务码：HTTP 200 不代表送达。
  *
@@ -12,15 +22,11 @@ const DEFAULT_RETRY_BASE_MS = 500
  * 「触发群安全设置」「关键词不匹配」这些情况下**照样返回 HTTP 200**，
  * 失败信息藏在 body.code / body.errcode 里。只判断 res.ok 的代码会把这些
  * 当成推送成功——于是告警静默失效：没人收到，也没人知道没收到。
- *
- * 注意：飞书应用 API（feishu-app）也用 `code` 字段，与 webhook 同源。
- * 所以读 code 时把 feishu 和 feishu-app 一起算。
  */
 function readBizCode(platform: Platform, body: unknown): number | undefined {
   if (!body || typeof body !== 'object') return undefined
   const o = body as Record<string, unknown>
-  const isFeishu = platform === 'feishu' || platform === 'feishu-app'
-  const raw = isFeishu ? o.code : o.errcode
+  const raw = isFeishuPlatform(platform) ? o.code : o.errcode
   return typeof raw === 'number' ? raw : undefined
 }
 
@@ -32,11 +38,10 @@ function readBizCode(platform: Platform, body: unknown): number | undefined {
  * 徒增延迟还把日志刷满。
  */
 function isRetryable(platform: Platform, httpStatus: number, code: number | undefined): boolean {
-  const isFeishu = platform === 'feishu' || platform === 'feishu-app'
   if (httpStatus === 0) return true            // 网络层异常 / 超时
   if (httpStatus >= 500) return true           // 对面炸了
   if (httpStatus === 429) return true          // 被限流
-  if (isFeishu && code === 9499) return true   // 飞书频控（webhook + 应用 API 共用）
+  if (isFeishuPlatform(platform) && code === 9499) return true   // 飞书频控（webhook + 应用 API 共用）
   if (platform === 'wecom' && code === 45009) return true   // 企微接口调用超限
   return false
 }
@@ -46,13 +51,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * 往 webhook POST 一个 payload，带重试、超时和业务码校验。
+ * 往平台接口 POST 一个 payload，带重试、超时和业务码校验。
  *
- * 这是所有对外发送的唯一出口——feishu.ts / wecom.ts 只负责把内容拼成各自的
- * payload 形状，发送语义（什么算成功、什么该重试、等多久）统一收在这里，
+ * 这是所有对外发送的唯一出口——feishu.ts / wecom.ts / feishu-app.ts 只负责把内容拼成
+ * 各自的 payload 形状，发送语义（什么算成功、什么该重试、等多久）统一收在这里，
  * 不允许各拼各的。
  */
-export async function postWebhook(
+export async function sendPayload(
   platform: Platform,
   url: string,
   payload: unknown,
@@ -67,22 +72,22 @@ export async function postWebhook(
   } = options
 
   if (!url) {
-    return { ok: false, httpStatus: 0, response: '', attempts: 0, error: 'webhook url 为空' }
+    return failResult('webhook url 为空')
   }
 
   // 去重在最前面：被拦下就一次网络请求都不发
   const gate = dedupe ? await resolveDedupe(dedupe) : null
   if (gate && !gate.allowed) {
-    return { ok: false, httpStatus: 0, response: '', attempts: 0, deduped: true, error: '窗口期内已推送过，本次跳过' }
+    return failResult('窗口期内已推送过，本次跳过', { deduped: true })
   }
 
   const doFetch = fetchImpl ?? globalThis.fetch
   if (typeof doFetch !== 'function') {
-    return { ok: false, httpStatus: 0, response: '', attempts: 0, error: '当前运行时没有 fetch，请通过 fetchImpl 注入' }
+    return failResult('当前运行时没有 fetch，请通过 fetchImpl 注入')
   }
 
   let attempts = 0
-  let last: SendResult = { ok: false, httpStatus: 0, response: '', attempts: 0, error: '未执行' }
+  let last: SendResult = failResult('未执行')
 
   for (let i = 0; i <= retries; i++) {
     attempts++
@@ -111,13 +116,13 @@ export async function postWebhook(
         if (gate) await gate.mark()
         return { ok: true, httpStatus, code, response: text, attempts }
       }
-      last = {
-        ok: false, httpStatus, code, response: text, attempts,
-        error: bizOk ? `HTTP ${httpStatus}` : `平台业务码 ${code}（HTTP ${httpStatus} 但未送达）`,
-      }
+      last = failResult(
+        bizOk ? `HTTP ${httpStatus}` : `平台业务码 ${code}（HTTP ${httpStatus} 但未送达）`,
+        { httpStatus, code, response: text, attempts },
+      )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      last = { ok: false, httpStatus: 0, response: '', attempts, error: `请求失败：${msg}` }
+      last = failResult(`请求失败：${msg}`, { attempts })
     }
 
     if (i < retries && isRetryable(platform, httpStatus, code)) {
@@ -129,3 +134,8 @@ export async function postWebhook(
 
   return last
 }
+
+/**
+ * @deprecated 改名 `sendPayload` —— 现在它也服务飞书开放平台 API，不再只是 webhook 出口。
+ */
+export const postWebhook = sendPayload

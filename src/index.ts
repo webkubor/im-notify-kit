@@ -1,25 +1,40 @@
-import type { FanoutResult, NotifyMessage, SendOptions, Target } from './types.js'
+import type { FanoutResult, NotifyMessage, SendOptions, SendResult, Target } from './types.js'
 import * as feishu from './feishu.js'
 import * as feishuApp from './feishu-app.js'
 import * as wecom from './wecom.js'
 
 export * from './types.js'
 export { feishu, feishuApp, wecom }
-export { postWebhook } from './send.js'
+export { sendPayload, postWebhook } from './send.js'
 export { memoryStore, DEFAULT_WINDOW_MS } from './dedupe.js'
 export { buildCard } from './feishu.js'
 export { renderMarkdown, buildTemplateCard } from './wecom.js'
+
+/**
+ * 单目标分发：按 platform 选发送函数，参数错时返回失败结果而不是抛异常。
+ *
+ * - feishu-app 有 text 且没有 markdown → 纯文本消息；否则发卡片（markdown 优先）。
+ * - feishu / wecom 都发卡片（企微是模板卡片）。
+ */
+async function sendOne(target: Target, msg: NotifyMessage, options?: SendOptions): Promise<SendResult> {
+  switch (target.platform) {
+    case 'feishu-app':
+      if (msg.text && !msg.markdown) {
+        return feishuApp.text(target.appAccessToken, target.appReceiveId, msg.text, target.appReceiveIdType, options)
+      }
+      return feishuApp.card(target.appAccessToken, target.appReceiveId, msg, target.appReceiveIdType, options)
+    case 'feishu':
+      return feishu.card(target.url, msg, options)
+    case 'wecom':
+      return wecom.card(target.url, msg, options)
+  }
+}
 
 /**
  * 把同一条消息发到多个目标，一次拿回全部结果。
  *
  * 并发发送，**永不抛异常**——单个目标失败不影响其它目标，失败信息在对应结果的
  * error 里。调用方拿到的是一份完整战报，而不是「第一个失败就整体炸掉」。
- *
- * 平台分发：
- *   - 'feishu'       → feishu.card（群机器人 webhook）
- *   - 'wecom'        → wecom.card（企微群机器人 webhook）
- *   - 'feishu-app'   → feishuApp.card（飞书开放平台 im/v1/messages，需要 token + receive_id）
  *
  * 注意去重：dedupe.key 是按调用去重的，多目标共用同一个 key 意味着
  * 「这条消息这个窗口期发过了」，不是「这个群发过了」。要按群去重就分开调用。
@@ -29,23 +44,19 @@ export async function notify(
   msg: NotifyMessage,
   options?: SendOptions,
 ): Promise<FanoutResult[]> {
+  // JS 调用方没有类型约束，运行时兜底：markdown / text 至少给一个
+  if (!msg.markdown && !msg.text) {
+    return targets.map((target) => ({
+      ok: false,
+      httpStatus: 0,
+      response: '',
+      attempts: 0,
+      error: 'NotifyMessage 需要 markdown 或 text 至少一个',
+      target,
+    }))
+  }
   return Promise.all(
-    targets.map(async (target) => {
-      let r: import('./types.js').SendResult
-      if (target.platform === 'feishu-app') {
-        // feishu-app：调用方在 target 上带 token + receive_id；text 走 text，否则走 card
-        if (msg.text && !msg.markdown) {
-          r = await feishuApp.text(target.appAccessToken!, target.appReceiveId!, msg.text, target.appReceiveIdType, options)
-        } else {
-          r = await feishuApp.card(target.appAccessToken!, target.appReceiveId!, msg, target.appReceiveIdType, options)
-        }
-      } else if (target.platform === 'feishu') {
-        r = await feishu.card(target.url!, msg, options)
-      } else {
-        r = await wecom.card(target.url!, msg, options)
-      }
-      return { ...r, target }
-    }),
+    targets.map(async (target) => ({ ...(await sendOne(target, msg, options)), target })),
   )
 }
 
