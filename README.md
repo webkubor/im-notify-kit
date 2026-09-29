@@ -1,5 +1,8 @@
 # im-notify-kit
 
+> [English](README.en.md) | 中文
+
+
 [![npm version](https://img.shields.io/npm/v/im-notify-kit.svg)](https://www.npmjs.com/package/im-notify-kit)
 [![npm downloads](https://img.shields.io/npm/dw/im-notify-kit.svg)](https://www.npmjs.com/package/im-notify-kit)
 [![license](https://img.shields.io/npm/l/im-notify-kit.svg)](./LICENSE)
