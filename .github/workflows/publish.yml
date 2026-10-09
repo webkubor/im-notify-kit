@@ -1,0 +1,83 @@
+name: Publish
+
+# 用 npm Trusted Publisher（OIDC）：不存任何 NPM_TOKEN，GitHub Actions 直接向
+# npm 证明「这次发布来自这个仓库的这个 workflow」，npm 侧校验通过才允许发布。
+#
+# 为什么不用 token：token 会过期、会泄漏、要轮换，而且发新包时经常发现权限范围不对
+# （2026-10-09 实测：kubor 的 Granular token 只授了 @model-go scope，发这个无 scope
+# 包直接 403）。OIDC 每次都是短时凭据，且自动带 provenance 签名。
+#
+# 发布前 npm 网页上必须已配置 Trusted Publisher：
+#   Publisher = GitHub Actions
+#   Organization/user = webkubor
+#   Repository       = im-notify-kit
+#   Workflow filename = publish.yml          ← 必须与下面的 name 文件名一致
+#   Environment      = （留空）
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # Trusted Publisher 必需：允许向 npm 换取 OIDC 凭据
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Trusted Publisher 要求 npm >= 11.5.1（OIDC 支持）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 确认 npm 版本支持 OIDC
+        run: |
+          npm -v
+          node -e "
+            const v = require('child_process').execSync('npm -v').toString().trim().split('.').map(Number);
+            if (v[0] < 11 || (v[0] === 11 && v[1] < 5)) {
+              console.error('✘ npm ' + v.join('.') + ' 太旧，Trusted Publisher 需要 >= 11.5.1');
+              process.exit(1);
+            }
+          "
+
+      - run: npm ci
+
+      # compat = typecheck + test + build。prepublishOnly 也会跑一遍，
+      # 这里显式跑是为了让失败停在「测试」这一步，而不是停在发布命令里。
+      - run: npm run compat
+
+      # 发布前先确认版本号没被占：npm 版本号永久占用，撞了只能改回 package.json
+      - name: 校验版本未被发布过
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "✘ $NAME@$VERSION 已存在于 npm，请先升 package.json 的 version" >&2
+            exit 1
+          fi
+          echo "✓ $NAME@$VERSION 尚未发布，可以发"
+
+      - name: 发布到 npm
+        run: npm publish --access public --provenance
+
+      - name: 回读确认
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          # 注册表有传播延迟，刚发完匿名查到 404 是正常的，重试几次
+          for i in 1 2 3 4 5 6; do
+            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+              echo "✓ $NAME@$VERSION 已在 npm 上可查"
+              npm view "$NAME@$VERSION" dist.integrity dist.tarball
+              exit 0
+            fi
+            echo "… 第 $i 次未查到，30s 后重试（传播延迟）"
+            sleep 30
+          done
+          echo "✘ 发布后 3 分钟内仍查不到该版本，请人工核对 npm 网页" >&2
+          exit 1
