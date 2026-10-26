@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v0.4.1
+dev 工具链整链升级（运行时零依赖不变，产物不变）。
+
+- TypeScript 5.9 → **7.0**：类型检查 / 声明文件产出走原生编译器（平台二进制、零 JS
+  依赖），d.ts 产出显著提速
+- tsup 8.5 → **9.0**：打包层引擎仍为 esbuild 0.28，产物 11.70 KB 不变
+- vitest 4.1 → **5.0**：测试管线底层随 vite 8 换代为 rolldown（esbuild 退出依赖树）
+- @types/node 24 → 26
+
+`npm run compat` 全绿（typecheck + 29 测试 + build）。对使用方无任何 API 变化，
+`^0.4.0` 语义下无需升级。
+
 ## v0.4.0
 修复 feishu-app 鉴权漏洞 + 类型收紧 + 代码清理。
 
