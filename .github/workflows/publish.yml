@@ -69,8 +69,11 @@ jobs:
         run: |
           NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
-          # 注册表有传播延迟，刚发完匿名查到 404 是正常的，重试几次
-          for i in 1 2 3 4 5 6; do
+          # 注册表有传播延迟，刚发完匿名查到 404 是正常的，重试几个窗口。
+          # 2026-10-26 v0.4.1 实测：发布成功但传播超过 3 分钟，6 次重试耗尽后
+          # 这一步报红——run 看起来像发布失败，npm 网页上其实已经可查。
+          # 假红比没有校验更糟：它训练人忽略红灯。窗口放宽到 6 分钟。
+          for i in $(seq 1 12); do
             if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
               echo "✓ $NAME@$VERSION 已在 npm 上可查"
               npm view "$NAME@$VERSION" dist.integrity dist.tarball
@@ -79,5 +82,6 @@ jobs:
             echo "… 第 $i 次未查到，30s 后重试（传播延迟）"
             sleep 30
           done
-          echo "✘ 发布后 3 分钟内仍查不到该版本，请人工核对 npm 网页" >&2
+          echo "✘ 发布后 6 分钟内仍查不到该版本。npm publish 本身若失败会在上一步报红；"
+          echo "  走到这里大概率只是传播慢——先去 npm 网页核对，别急着重发（版本号会被占）。" >&2
           exit 1
