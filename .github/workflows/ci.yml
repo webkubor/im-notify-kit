@@ -1,0 +1,29 @@
+name: CI
+
+# 每次 push / PR 都跑一遍 compat：typecheck + 测试 + build。
+#
+# 为什么必须单独有这条：原来 compat 只在 publish.yml 里跑，也就是说坏代码要等到
+#「准备发版」那一刻才被拦住 —— 那时版本号已经在 npm 上占位，改也不是、不改也不是。
+# 把门禁前移到每次提交，坏代码根本进不了 main。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 安装依赖
+        run: npm ci
+
+      # compat = typecheck + test + build，一次跑完三道
+      - name: typecheck + 测试 + 构建
+        run: npm run compat
