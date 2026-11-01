@@ -1,19 +1,38 @@
-# im-notify-kit
+<h1 align="center">📣 im-notify-kit</h1>
+
+<p align="center">
+  飞书 / 企业微信群机器人通知的<b>发送层</b>。零依赖，跨 Node / Cloudflare Workers / Deno。
+</p>
 
 > [English](README.en.md) | 中文
 
 
-[![npm version](https://img.shields.io/npm/v/im-notify-kit.svg)](https://www.npmjs.com/package/im-notify-kit)
-[![npm downloads](https://img.shields.io/npm/dw/im-notify-kit.svg)](https://www.npmjs.com/package/im-notify-kit)
-[![license](https://img.shields.io/npm/l/im-notify-kit.svg)](./LICENSE)
-[![TypeScript types](https://img.shields.io/badge/types-included-blue)](https://www.typescriptlang.org)
-[![zero deps](https://img.shields.io/badge/dependencies-0-brightgreen)](https://www.npmjs.com/package/im-notify-kit?activeTab=code)
+<p align="center">
+  <a href="https://www.npmjs.com/package/im-notify-kit"><img alt="npm version" src="https://img.shields.io/badge/npm-v0.4.1-cb3837?style=for-the-badge&logo=npm" /></a>
+  <a href="https://www.npmjs.com/package/im-notify-kit"><img alt="npm downloads" src="https://img.shields.io/badge/npm-downloads-0f766e?style=for-the-badge&logo=npm" /></a>
+  <a href="./LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-0f766e?style=for-the-badge" /></a>
+  <a href="https://www.typescriptlang.org"><img alt="types" src="https://img.shields.io/badge/types-included-3178c6?style=for-the-badge&logo=typescript" /></a>
+  <a href="https://www.npmjs.com/package/im-notify-kit?activeTab=code"><img alt="zero deps" src="https://img.shields.io/badge/dependencies-0-brightgreen?style=for-the-badge" /></a>
+</p>
 
 飞书（Lark）/ 企业微信群机器人通知的**发送层**。零依赖，跨 Node / Cloudflare Workers / Deno。
 
 ```bash
 npm i im-notify-kit
 ```
+
+## 为什么用这个而不是自己写
+
+| | **im-notify-kit** | 手写 `fetch` | 飞书官方 SDK | 企微官方 SDK |
+|---|:---:|:---:|:---:|:---:|
+| 识别「HTTP 200 但消息没送达」 | ✅ 查 `code`/`errcode` | ⚠️ 常漏 | ✅ | ✅ |
+| 飞书 + 企微统一接口 | ✅ | ❌ 要写两套 | 只飞书 | 只企微 |
+| 依赖数 | **0** | 0 | 多个 | 多个 |
+| Cloudflare Workers / Deno 可用 | ✅ 零依赖 | ✅ | ⚠️ 看运行时 | ⚠️ |
+| 只做发送，不碰你的存储 | ✅ 依赖注入 | ✅ | ⚠️ 混了配置/日志 | ⚠️ |
+| 自带去重钩子（DedupeStore） | ✅ 接口留好 | 手写 | ❌ | ❌ |
+
+> 只列**能力有无**。要判断「送达判定」这条到底省不省事，看下面「为什么有这个包」里那个 HTTP 200 的坑。
 
 ## 为什么有这个包
 
